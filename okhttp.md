@@ -40,7 +40,7 @@ override fun proceed(request: Request): Response {
 ```
 
 
-![整个链递归调用经过](/home/tys-matebook/Downloads/okhttp_link.png)
+![链递归调用经过](https://raw.githubusercontent.com/yongsongTang/PicGo/main/img/okhttp_link.svg)
 
 1. 创建RealInterceptorChain对象并调用该对象proceed方法。也就是调用第0个位置，拦截器的intercept方法。
 
