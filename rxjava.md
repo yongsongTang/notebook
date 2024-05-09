@@ -19,7 +19,7 @@
 Observable.create { it.onNext(1) } // 创建 ObservableCreate source(上游)是{}里内容   	|
     .map { } // 创建 ObservableMap 上游是 ObservableCreate                          	|
     .observeOn(Schedulers.io()) // 创建 ObservableObserveOn 上游是 ObservableMap    	|
-    .doOnNext { } // 创建 ObservableDoOnEach 上游是 ObservableObserveOn              🔽
+    .doOnNext { } // 创建 ObservableDoOnEach 上游是 ObservableObserveOn                  🔽
                                                                                    
 // 创建各种操作符对应的主题(可观察者)，并指明主题对应的上游(source)
 ```
@@ -29,16 +29,17 @@ Observable.create { it.onNext(1) } // 创建 ObservableCreate source(上游)是{
 ​	
 
 ```kotlin
-Observable.create { it.onNext(1) } // {}是上游 触发{ }里内容														           		🔼		
-    .map { } // 上游(ObservableCreate).subscribeActual(下游/观察者DoOnEachObserver)									 |
+Observable.create { it.onNext(1) } // {}是上游 触发{ }里内容        	                                 🔼		
+    .map { } // 上游(ObservableCreate).subscribeActual(下游/观察者DoOnEachObserver)							
     .observeOn(Schedulers.io()) // 上游(ObservableMap).subscribeActual(下游/观察者ObserveOnObserver)	 |
-    .doOnNext { } // 上游(ObservableObserveOn).subscribeActual(下游/观察者(DoOnEachObserver))				 |
-    .subscribe() // ObservableDoOnEach.subscribeActual(下游/观察者(空))                               |
+    .doOnNext { } // 上游(ObservableObserveOn).subscribeActual(下游/观察者(DoOnEachObserver))	         |
+    .subscribe() // ObservableDoOnEach.subscribeActual(下游/观察者(空))                                    |
 
 // subscribe()时 指明各主题对应的下游
 ```
 
 <font color=red>subscribe() </font> -----> subscribeActual方法。 subscribeActual方法会调用上游(source)的<font color=red>subscribe() </font>
+
 subscribe() -> ObservableDoOnEach(subscribeActual) -> ObservableObserveOn -> ObservableMap -> ObservableCreate -> { }
 
 
