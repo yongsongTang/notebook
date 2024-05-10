@@ -55,6 +55,82 @@ override fun proceed(request: Request): Response {
 
 
 
+### 代码描述
+
+```kotlin
+data class Request_(var url: String)
+data class Response_(var ret: String)
+
+interface Interceptor_ {
+    interface Chain {
+        fun request(): Request_
+
+        fun process(request: Request_): Response_
+    }
+    fun intercept(chain: Chain): Response_
+}
+
+class RealInterceptorChain(
+    private val interceptors: List<Interceptor_>,
+    private val index: Int,
+    private val request: Request_
+) : Interceptor_.Chain {
+
+    override fun request(): Request_ = this.request
+
+    override fun process(request: Request_): Response_ {
+        // 调用当前位置Interceptor.intercept()  把下一个Interceptor位置传下去
+        val interceptor = interceptors[index]
+        val c = RealInterceptorChain(interceptors, index + 1, request());
+        return interceptor.intercept(c)
+    }
+}
+
+class MyInterceptor(private val index: Int) : Interceptor_ {
+    override fun intercept(chain: Interceptor_.Chain): Response_ {
+        println("$index request:${chain.request().url}")
+        chain.request().url += "_${index}" // 修改参数(request)
+
+        val response_ = chain.process(chain.request()) // 触发下一拦截器方法
+        println("$index response:${response_.ret}")
+        response_.ret += "-${index}" // 修改结果(response)
+        return response_
+    }
+}
+
+class MyInterceptorEnd : Interceptor_ {
+    override fun intercept(chain: Interceptor_.Chain): Response_ {
+        println("最后一个 发起请求获取结果 ${chain.request().url}")
+        // 真正发起网络请求获取结果,不在继续向下(不在调用chain.process方法)
+        return Response_(ret = "result")
+    }
+}
+```
+
+```kotlin
+        val interceptors = mutableListOf<Interceptor_>()
+        for (i in 0..2) {
+            interceptors.add(i, MyInterceptor(i));
+        }
+        interceptors += MyInterceptorEnd()
+
+        val request = Request_(url = "https://a")
+        val realInterceptorChain = RealInterceptorChain(interceptors, 0, request)
+        val response = realInterceptorChain.process(request)
+        println("最终结果 ${response.ret}")
+        
+//        0 request:https://a
+//        1 request:https://a_0
+//        2 request:https://a_0_1
+//        最后一个 发起请求获取结果 https://a_0_1_2
+//        2 response:result
+//        1 response:result-2
+//        0 response:result-2-1
+//        最终结果 result-2-1-0
+```
+
+
+
 
 ## 链接池
 
