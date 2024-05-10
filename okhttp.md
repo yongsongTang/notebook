@@ -63,7 +63,7 @@ override fun proceed(request: Request): Response {
    >
    > 方法a：固定为找到下一个方法b并调用
 
-3. 如果a，b不是方法，是类。a类似Intercept  b类似Chain
+3. 如果a，b不是方法，是类。b类似Intercept  a类似Chain
 
    
 
