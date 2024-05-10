@@ -53,7 +53,19 @@ override fun proceed(request: Request): Response {
    >
    > 响应(Response): CallServerInterceptor  ....  -&gt; 3 -&gt; 2 -&gt; 1 -&gt; 0  
 
+### 思考过程
 
+1. 一个方法递归循环，压栈时获取参数，出栈时获取结果
+
+2. 两个方法递归循环，a方法中调用方法b，b方法中调用方法a。如此反复，压栈时获取参数，出栈时获取结果。
+
+   > 方法b：放出去由外部实现，但是实现中必须得调用方法a，否则循环会结束。
+   >
+   > 方法a：固定为找到下一个方法b并调用
+
+3. 如果a，b不是方法，是类。a类似Intercept  b类似Chain
+
+   
 
 ### 代码描述
 
