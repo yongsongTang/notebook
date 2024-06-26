@@ -169,6 +169,10 @@ java程序运行时将字节码加载到内存中并初始化的过程，加载�
 
 2. 调用类中静态变量或静态方法
 
+   > 静态内部类：独立与外部类，只有在首次使用(静态方法/静态变量/new)时才会被加载。适合延迟加载单例模式
+   >
+   > 非静态内部类：创建外部类实例后，首次创建外部实例时
+
 类卸载时机，类卸载由jvm控制
 
 
@@ -234,6 +238,10 @@ println("3 ${Test::class.java.classLoader?.parent?.parent}") // null
 父类加载失败 退回给子类加载。
 
 > 双亲委派机制 是java推荐的 并不是强制，可以继承java.lang.ClassLoader 实现自己的类加载器。若果保持双亲委派机制就只重写findClass，如果破坏双亲委派机制就重写loadClass
+
+
+
+
 
 
 
@@ -686,6 +694,43 @@ TERMINATED：终止状态，线程执行完成或者由于异常退出
 线程中断：当线程处于WAITING或者TIME_WAITING时 响应中断并且抛出InterruptedException异常。当线程处于RUNNABLE状态时并不会改变状态 只是设置中断标志为。Thread.interrupted()检查并且清除中断状态，Thread.isInterrupted()检查但不清除中断状态
 
 
+
+##### ThreadLocal
+
+线程本地变量，和普通变量不同的是，必须通过他的get() set()方法访问，每个线程有独立的副本互补干扰。在访问(get set)ThreadLocal变量时和当前线程绑定，访问当前线程的ThreadLocalMap threadLocals变量。ThreadLocal实例通常是类中的私有静态字段，希望将状态与线程相关联。
+
+> get() set()方法中通过下面方法访问线程threadLocals变量(java.lang包下才能访问)
+>
+> ```java
+> ThreadLocalMap getMap(Thread t) {
+>     return t.threadLocals;
+> }
+> 
+> public void set(T value) {
+>         Thread t = Thread.currentThread();
+>         ThreadLocalMap map = getMap(t);
+>         if (map != null) {
+>             map.set(this, value); // this是ThreadLocal<T>
+>         } else {
+>             createMap(t, value);
+>         }
+> }
+> 
+> public T get() {
+>         Thread t = Thread.currentThread();
+>         ThreadLocalMap map = getMap(t);
+>         if (map != null) {
+>             ThreadLocalMap.Entry e = map.getEntry(this);
+>             if (e != null) {
+>                 @SuppressWarnings("unchecked")
+>                 T result = (T)e.value;
+>                 return result;
+>             }
+>         }
+>         return setInitialValue();
+> }
+> 
+> ```
 
 
 
