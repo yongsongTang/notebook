@@ -1,9 +1,6 @@
+# Android Binder
 
-### 调用其他进程方法像调用本地方法一样，一次远程调用流程?
-
-> 注:从cpp层描述
-
-#### 直观感受下远程调用 “hello world”
+## Binder “hello world”
 
 1. Service进程中，实现aidl定义的接口方法。添加到ServiceManager，开启线程池。代码如下：
 
@@ -80,7 +77,7 @@ adb shell /system/bin/binder_hello_client
 call finish, ret:99
 ```
 
-#### 获取ServiceManager
+## 获取ServiceManager
 
 ```cpp
 // frameworks/native/libs/binder/IServiceManager.cpp
@@ -264,7 +261,7 @@ status_t Parcel::unflattenBinder(sp<IBinder>* out) const
 > 位操作搜索(硬件指令支持)相较于红黑树的比较，指针操作肯定更快。但红黑树在删除handle后，查找最小可用句柄仍然是可用的，位操作搜索的方式handle值只会增加，删除handle后中间留下空缺。
 > handle 0 预留给ServiceManager
 
-#### 一次远程调用
+## 一次远程调用
 
 由aidl生成的`BpXXX`中对应的方法触发，比如`BpServiceManager`。执行在目标进程的`BnXXX::onTransact`中进行分发，比如`BnServiceManager`，进而分发到我们的具体实现方法。数据流向如下图：
 
@@ -309,12 +306,12 @@ graph LR
 
 ```
 
-##### client进程
+### client进程
 
 1. 发起远端调用，数据序列化，写数据到驱动，驱动找到目标进程，目标线程。通知目标线程取数据执行。
 2. 从驱动读取数据，还没有数据可以读取时将会睡眠，直到目标线程处理结束后有数据通知。读取数据后填充出参_aidl_reply一步步返回带回结果。
 
-###### 序列化写数据到驱动
+#### 序列化写数据到驱动
 
 ```cpp
     // out/.../aidl/android/os/IServiceManager.cpp
@@ -351,7 +348,7 @@ graph LR
     ioctl(mProcess->mDriverFD, BINDER_WRITE_READ, &bwr); // 向驱动写入数据 
 ```
 
-###### 阻塞从驱动读取数据
+#### 阻塞从驱动读取数据
 
 写数据到驱动后，阻塞等待目标线程执行结束有数据后通知。接收到通知后填充出参Parcel，一步步向上返回到`BpXXX`，反序列化Parcel到具体参数类型，填充出参。
 
@@ -399,9 +396,9 @@ graph LR
 > *BpBinder的handle值怎么确定的？*
 > servicemanager handle值固定位0。对于普通service，我们调用`getService(name)`从servicemanager哪里获取时，servicemanager进程通过名字找到对应的Servcie(BpBInder对象)。Parcel::writeStrongBinder(BpBinder)序列化`flat_binder_object obj = {.hdr.type = BINDER_TYPE_HANDLE, .handle = handle, .cookie = 0, .flags = 0, .binder = 0};`注意现在的handle，是要获取的service在servicemanager进程中对应的handle值。把这些数据写入驱动回复调用线程，此时在驱动中通过handle找到要获取的node，确定调用进程target_proc，如果调用进程target_proc中没有对node的引用binder_ref,那么就在target_proc中创建binder_ref，建立起调用进程对node的引用，同时handle值生成。Parcel反序列化时更具type和handle值构建出BpBinder(handle)对象。
 
-##### 驱动
+### 驱动
 
-###### write应用层数据到内核
+#### write应用层数据到内核
 
 copy应用层数据到内核，解析执行。找到数据要到达的目标进程，唤醒目标线程，让目标线程去处理数据。这里有两种情况
 
@@ -504,7 +501,7 @@ copy应用层数据到内核，解析执行。找到数据要到达的目标进�
 >> - 创建binder_ref时，新建的binder_ref添加到了node->refs，`hlist_add_head(&new_ref->node_entry, &node->refs);`换句话说node中refs链表记录着有哪些引用了这个node。这个值在后续死亡通知，冻结时用到。
 >> - 创建binder_ref时，新建的binder_ref添加到了proc->refs_by_node，`rb_insert_color(&new_ref->rb_node_node, &proc->refs_by_node);`和proc->refs_by_desc，`rb_insert_color(&new_ref->rb_node_desc, &proc->refs_by_desc);`，换句话说proc中有两个红黑树保存这个binder_ref，一个以node指针作为索引，一个以desc(u32类型 也就是handle)作为索引。proc->refs_by_node在新建binder_ref前，判断进程中是否已经存在对应bindr_refs时使用。proc->refs_by_desc在远程调用时，通过handle值找到对应binder_ref。
 
-###### read内核数据到应用层
+#### read内核数据到应用层
 
 取`proc->todo`或者`thread->todo`中的work出来执行，都没有时阻塞。阻塞的线程在[write添加任务时唤醒](#write应用层数据到内核)。poll方式开启的线程不阻塞，他们只在有数据时才来读。
 
@@ -592,14 +589,14 @@ copy应用层数据到内核，解析执行。找到数据要到达的目标进�
 
 ```
 
-##### service进程
+### service进程
 
 1. binder线程睡眠等待，直到有该线程能处理的数据到来时唤醒
 2. 从驱动读取数据，反序列化，执行指令并将结果写会驱动，驱动通知调用线程取结果
 
 实现aidl接口的进程，service进程需要开启线程(binder线程)，用来接收来，处理来自驱动的主动消息。对于client进程开启binder线程不是必须的，如果要接收node死亡通知，需要开启binder线程(客户端来自驱动的主动消息好像只有死亡通知)。
 
-###### 开启binder线程
+#### 开启binder线程
 
 1. epoll方式，监听binder_fd的EVENT_INPUT事件，事件触发时间接调用到`getAndExecuteCommand()`环获取并执行来自驱动的消息。驱动中线程标志位`BINDER_LOOPER_STATE_ENTERED | BINDER_LOOPER_STATE_POLL`。比如，ServiceManager 就是epoll监听方式的binder线程。
 
@@ -647,7 +644,7 @@ copy应用层数据到内核，解析执行。找到数据要到达的目标进�
     mProcess->mCurrentThreads--;   
 ```
 
-###### binder线程执行，返回结果
+#### binder线程执行，返回结果
 
 ```cpp
     // frameworks/native/libs/binder/IPCThreadState.cpp getAndExecuteCommand()
@@ -699,11 +696,11 @@ copy应用层数据到内核，解析执行。找到数据要到达的目标进�
     }
 ```
 
-#### 死亡通知
+## 死亡通知
 
 正常情况下Service组件被其他Client引用，他是不可能销毁的。但是Service组件宿主进程可能意外崩溃，死亡通知注册回调到驱动，以便Client进程能够在Service组件死亡时获得通知。
 
-##### 注册死亡通知
+### 注册死亡通知
 
 ```cpp
 // frameworks/native/libs/binder/BpBinder.cpp
@@ -758,7 +755,7 @@ status_t BpBinder::linkToDeath(
 
 驱动收到`BC_REQUEST_DEATH_NOTIFICATION`，创建`binder_ref_death`结构体(包含`BpBinder`指针)，通过`handle`找到`binder_ref`,`binder_ref`的`death`赋值。如果注册死亡通知时`binder_ref`指向`binder_node`宿主进程已经退出，死亡通知的work立即`ref->death->work`添加到`proc->todo`执行，通知应用层。
 
-##### 清除死亡通知
+### 清除死亡通知
 
 ```cpp
     // frameworks/native/libs/binder/BpBinder.cpp
@@ -790,7 +787,7 @@ status_t BpBinder::linkToDeath(
 }
 ```
 
-回调方法放从`Vector`移除，如果`Vector`中没有回调了，给驱动发`BC_CLEAR_DEATH_NOTIFICATION`。
+回调方法放从`Vector`移除，如果`Vector`中没还有回调了，给驱动发`BC_CLEAR_DEATH_NOTIFICATION`。
 
 ```cpp
     //common/drivers/android/binder.c 
@@ -820,7 +817,7 @@ status_t BpBinder::linkToDeath(
 
 驱动收到`BC_CLEAR_DEATH_NOTIFICATION`后，置空`ref->death`。如果`death->work`已经添加打某个链表，说明此时死亡通知已经触发，添加到了`proc->todo`，只是还没执行。`work.type = BINDER_WORK_DEAD_BINDER_AND_CLEAR`，表示在应用层执行后，清除死亡通知。否则`death->work.type = BINDER_WORK_CLEAR_DEATH_NOTIFICATION`，表示回收`ref->death`资源。
 
-##### 触发死亡通知
+### 触发死亡通知
 
 binder进程退出，`ProcessState::~ProcessState()`析构函数中关闭binder fd时`close(mDriverFD)`，触发驱动`binder_flush`，`binder_release`方法。异步排队由内核线程执行`static DECLARE_WORK(binder_deferred_work, binder_deferred_func)`。遍历该进程下所有`proc->nodes`，找到每个node被那些`binder_ref`所引用，每个`binder_ref`如果有注册死亡通知，则加到proc->todo执行通知应用层。
 
@@ -858,7 +855,7 @@ binder进程退出，`ProcessState::~ProcessState()`析构函数中关闭binder 
 
 > `ProcessState`静态变量`static sp<ProcessState> gProcess;`，生命周期和进程生命周期一致，所以进程退出时`ProcessState`的生命周期才会结束，析构函数才会触发
 
-##### 接收死亡通知
+### 接收死亡通知
 
 驱动处理`BINDER_WORK_DEAD_BINDER`和`BINDER_WORK_DEAD_BINDER_AND_CLEAR`类型work，将`cookie`(BpBinder指针)和指令`BR_DEAD_BINDER`传入应用层。应用层接收来自驱动的通知`BR_DEAD_BINDER`，触发`cookie`(BpBinder)注册的死亡回调方法。
 
@@ -916,7 +913,7 @@ binder进程退出，`ProcessState::~ProcessState()`析构函数中关闭binder 
 
 应用层收到来自驱动的死亡通知`BR_DEAD_BINDER`，执行`BpBinder::sendObituary()`把`Vector`中的每个回调拿出来执行。需要注意`wp<DeathRecipient>`保存的是回调的弱引用，意味着外部保存好`sp<DeathRecipient>`的引用，如果回调对象不存在了，也就不能触发了。
 
-#### ~~冻结(binder冻结)~~
+## ~~冻结(binder冻结)~~
 
 `IPCThreadState::freeze`方法冻结或者解冻一个binder进程。
 当被冻结的进程为目标进程时，在work添加到todo的时候会进行判断，如果是同步直接返回`BR_FROZEN_REPLY`，应用层收到后返回到方法是`FAILED_TRANSACTION`。向被冻结进程的todo，添加同步传输任务，失败`FAILED_TRANSACTION`。
@@ -946,7 +943,7 @@ binder进程退出，`ProcessState::~ProcessState()`析构函数中关闭binder 
     }
 ```
 
-#### 引用变化
+## 引用变化
 
 ```mermaid
 graph LR
@@ -1002,14 +999,14 @@ graph LR
 > `binder_transaction`内核中，调用线程(Client)和执行线程(Server)间传递数据
 > 用户空间，内核空间传递数据的结构体是`binder_transaction_data`。
 
-##### BBinde
+### BBinde
 
 用户空间创建，运行在Server进程中。BBinder对象一方面被运行在Server进程中其他对象所引用，另一方面被Binder驱动中binder_node所引用。BBinder继承RefBase，Server进程中其他对象通过智能指针来引用BBinder对象，控制他们生命周期。binder_node运行在内核空间，不能通过智能指针引用用户空间的BBinder对象。因此Binder驱动和Server进程就约定了一套规则来维护他们的引用计数，避免BBinder对象在被b引用的情况下销毁。
 
 > - 应用层BBinder的生命周期，受内核中binder_node生命周期影响，虽然没有出现赋值(`=`)操作，我们也说binder_node引用了BBinder。
 > - 一个对象的唯一标识给了谁，我们就说谁引用了对象。比如，BBinder的指针给到了binder_node，binder_node引用了BBinder。binder_ref的句柄(desc/handle)给到了BpBinder，BpBinder引用了binder_ref。在引用存在的情况下，对象肯定不能销毁。
 
-##### binder_node
+### binder_node
 
 驱动程序中创建，与服务端的BBinder对象一一对应，一个BBinder在内核中最多只会有一个binder_node，他是根据BBinder的应用计数器地址(`node->ptr`)来判断存不存在的。被binder_ref所引用。当一个BBinder对象第一次被跨进程传递时，Binder驱动会为它创建一个binder_node，并记录下这个node对应的用户空间地址cookie和引用计数器地址ptr。
 
@@ -1029,7 +1026,7 @@ graph LR
     node->cookie = cookie; // BBinder应用空间指针
 ```
 
-##### binder_ref
+### binder_ref
 
 驱动程序中创建，与客户端的BpBinder对象一一对应，一个BpBinder内部的句柄(handle)就对应着内核里的一个binder_ref，他是根据binder_ref中node地址(`ref->node`)来判断存不存在的。当一个客户端进程第一次获取到某个服务的代理时，驱动会为这个客户端进程创binder_ref，并让它指向目标服务的binder_node。同时，驱动会返回一个整数句柄(handle)给客户端，客户端用这个handle来创建BpBinder。
 
@@ -1041,7 +1038,7 @@ graph LR
 
 > 一个进程可能即时客户端进程又是服务端进程。比如，从ServiceManager获取Service时，调用进程作为客户端，获取服务代理对象(BpBinder)驱动为调用进程创建binder_ref。向ServiceManager添加Service时，调用进程成了服务端，servicemanager进程作为客户端获取服务代理对象(BpBinder)，驱动为servicemanager进程创建binder_ref。
 
-##### BpBinder
+### BpBinder
 
 用户空间创建，运行在Client进程中。它是服务端对象在客户端进程中的一个远程引用。BpBinder对象一方面被运行在Client进程中的其他对象所引用，另一方面它也引用Binder驱动中的binder_ref对象。因此Binder驱动和Client进程就约定了一套规则来维护他们的引用计数，避免binder_ref在还被引用的情况下销毁。
 
@@ -1075,9 +1072,158 @@ graph LR
     obj->incStrong(mProcess.get());
 ```
 
-#### binder驱动内核快照
+## 优先级(调度策略)
 
-##### 查看进程binder状态
+发起调用线程的优先级和node的优先级比较。取优先级较高的那个，是执行线程的优先级。防止一个高优先级客户端，执行一个低优先级服务而被长时间等待，可以更快的获取到cpu时间。
+
+**SCHED_NORMAL:** 公平策略，每个线程都合理的获得cpu时间。根据nice值获得cpu时间。nice值越低获得cpu时间比例越高。取值范围[-20, 19]值越小优先级越高
+
+**SCHED_FIFO：** 实时先进先出，没有时间片，一旦获取cpu，一直运行。只到1.更高优先级的线程抢占 2.主导放弃cpu(等待io) 3.运行完成。取值范围[1, 99]值越小优先级越高
+
+**SCHED_FIFO：** 实时轮转(Round-Robin) 同级轮转， 获取cpu后，运行固定时间片。如果时间片用完，有同级的线程在等待，放在同级的队列末尾，然后选择同级的线程运行。取值范围[1, 99]值越小优先级越高
+
+### 事务优先级
+
+事务(t)优先级来源
+
+```cpp
+    if (!(t->flags & TF_ONE_WAY) && binder_supported_policy(current->policy)) {
+        // 不是one way(同步) && 调度策略是支持的(发起调用线程的策略)
+        t->priority.sched_policy = current->policy;
+        t->priority.prio = current->normal_prio;
+    } else {
+        t->priority = target_proc->default_priority;
+    }
+```
+
+优先级继承，事务优先级继承与发起调用线程的优先级。异步传输，不关系什么时候结束，优先级就是目标Service进程优先级。
+
+### node优先级
+
+node优先级来源
+
+```cpp
+    // frameworks/native/libs/binder/Binder.cpp
+    // BBinder 中设置node的调度策略优先级
+    void BBinder::setMinSchedulerPolicy(int policy, int priority) {
+        ...
+        Extras* e = mExtras.load(std::memory_order_acquire);
+        if (e == nullptr) {
+            // Avoid allocations if called with default.
+            if (policy == SCHED_NORMAL && priority == 0) {
+                return;
+            }
+            e = getOrCreateExtras();
+            if (!e) return; // out of memory
+        }
+        e->mPolicy = policy;
+        e->mPriority = priority;
+    }
+
+    int BBinder::getMinSchedulerPolicy() {
+        Extras* e = mExtras.load(std::memory_order_acquire);
+        if (e == nullptr) return SCHED_NORMAL;
+        return e->mPolicy;
+    }
+
+    int BBinder::getMinSchedulerPriority() {
+        Extras* e = mExtras.load(std::memory_order_acquire);
+        if (e == nullptr) return 0;
+        return e->mPriority;
+    }
+```
+
+```cpp
+    // frameworks/native/libs/binder/Parcel.cpp
+    status_t Parcel::flattenBinder(const sp<IBinder>& binder) {
+        int schedBits = 0;
+        // 默认false, ServiceManager system_service  true
+        if (!IPCThreadState::self()->backgroundSchedulingDisabled()) { 
+            // 大多数应用调度策略， SCHED_NORMAL, 19
+            schedBits = schedPolicyMask(SCHED_NORMAL, 19);
+        }
+        if (!local) {
+            // BpBinder
+        }else{
+            // BBinder
+            int policy = local->getMinSchedulerPolicy();
+            int priority = local->getMinSchedulerPriority();   
+            if (policy != 0 || priority != 0) {
+                // override value, since it is set explicitly
+                schedBits = schedPolicyMask(policy, priority);
+            }
+            obj.hdr.type = BINDER_TYPE_BINDER;
+            obj.binder = reinterpret_cast<uintptr_t>(local->getWeakRefs());
+            obj.cookie = reinterpret_cast<uintptr_t>(local);     
+        }
+        obj.flags |= schedBits;
+    }
+```
+
+```cpp
+    // common/drivers/android/binder.c
+    static struct binder_node *binder_init_node_ilocked(struct binder_proc *proc,  
+        struct binder_node *new_node, struct flat_binder_object *fp){
+        ...
+        node = new_node;
+        node->sched_policy = (flags & FLAT_BINDER_FLAG_SCHED_POLICY_MASK) >>    FLAT_BINDER_FLAG_SCHED_POLICY_SHIFT;
+        node->min_priority = to_kernel_prio(node->sched_policy, priority); 
+    }
+```
+
+每个node都对应有一个调度策略，可通过`BBinder::setMinSchedulerPolicy`方法来设置，在`Parcel::flattenBinder`打平时转成了一个int值，放在flags中传入驱动。驱动创建node初始化时，解出调度策略放入node。
+
+### 优先级选择
+
+```cpp
+    static int binder_thread_read(struct binder_proc *proc,
+        struct binder_thread *thread, binder_uintptr_t binder_buffer, 
+        size_t size, binder_size_t *consumed, int non_block){
+        ...    
+        struct binder_transaction_data_secctx tr;
+        struct binder_transaction_data *trd = &tr.transaction_data;
+        // 执行线程唤醒后取work
+        w = binder_dequeue_work_head_ilocked(list);
+        // 传输到Server端的事务
+        t = container_of(w, struct binder_transaction, work);
+        trd->target.ptr = target_node->ptr;
+        trd->cookie = target_node->cookie;
+        // 设置执行线程的优先级
+        binder_transaction_priority(thread, t, target_node);
+        cmd = BR_TRANSACTION;
+        copy_to_user(ptr, &tr, trsize);
+    }
+
+    static void binder_transaction_priority(struct binder_thread *thread, 
+            struct binder_transaction *t, struct binder_node *node){
+        struct binder_priority desired = t->priority;
+        const struct binder_priority node_prio = {
+                .sched_policy = node->sched_policy,
+                .prio = node->min_priority,
+        };       
+        
+        // 取优先级高的， 
+        if (node_prio.prio < t->priority.prio ||  (node_prio.prio == t->priority.prio &&
+            node_prio.sched_policy == SCHED_FIFO)) {
+            // node 优先级高 || (优先级相同 && node 是sched_policy)
+            desired = node_prio;
+        }
+
+        // 设置线程调度策略前，保存线程的调度策略到事务t->saved_priority， 这个事务执行结束时回复线程优先级
+        t->saved_priority.sched_policy = task->policy;
+        t->saved_priority.prio = task->normal_prio;
+
+        // 设置线程优先级
+        binder_set_priority(thread, &desired);
+    }
+```
+
+在传输事务时，比较事务优先级和目标node的优先级，取优先级更高的作为执行线程的优先级。设置线程优先级前，保存线程的优先级到事务`t->saved_priority`在这个事务执行结束时，回复线程原来优先级。
+
+
+## binder驱动内核快照
+
+### 查看进程binder状态
 
 - 挂载目录
 
@@ -1138,7 +1284,7 @@ context binder                          //2
     ref->data.weak, ref->death);
 ```
 
-##### addService操作带来的引用变化
+### addService操作带来的引用变化
 
 ```cpp
     sp <IServiceManager> serviceManager = android::defaultServiceManager();
@@ -1176,9 +1322,9 @@ context binder
     ref 241054: desc 307 node 241053 s 1 w 1 d 0000000000000000
 ```
 
-对比发现，增加来自5435进程的binder_ref指向该bidner_node。新增binder_ref desc为307指向debug_id为241053的node。
+对比发现，增加来自5435进程的binder_ref指向该bidner_node。新增binder_ref desc为307指向debug_id为241053的node(被添加Service node)。
 
-- 添加进程binder状态，
+- 添加Service的进程binder状态，
 
 ```shell
 ➜ adb shell cat /sys/kernel/debug/binder/proc/5435   
@@ -1192,17 +1338,202 @@ context binder
   ref 241051: desc 0 node 1 s 1 w 1 d 0000000000000000
 ```
 
-binder_node的debug_id是241053，被来自进程203的binder_ref所引用。同时它也存在debug_id为241051的binder_ref指向debug_id为1的node。
+binder_node的debug_id是241053，被来自进程203(ServiceManager进程)的binder_ref所引用。同时它也存在debug_id为241051的binder_ref指向debug_id为1的node(ServiceManager node)。
+
+servicemanager进程引用新添加Service node，添加Service进程引用ServiceManager node。你引用我node，我也引用你的node。这个引用以智能指针`sp<BpBinder>`方式出现，在`onLastStrongRef`最后一个强引用断开时，通过内核请求远端进程对应Service的强引用数-1。对于addService来说，指向被添加Service的智能指针`sp<BpBinder>`放在一个集合里面永远不会销毁，也就是说远端进程中对应的Service只少有一个强引用，直到远端进程退出，死亡通知servicemanager把它从集合中移除。
+
+## binder java接口
+
+service端实现可以用cpp也可以用java，client端调用可以是cpp也可以是java。
+
+### ServiceManager获取
+
+```java
+    private static IServiceManager getIServiceManager() {
+        if (sServiceManager != null) {
+            return sServiceManager;
+        }
+
+        // Find the service manager
+        sServiceManager = ServiceManagerNative
+                .asInterface(Binder.allowBlocking(BinderInternal.getContextObject())); // BinderProxy.java
+        return sServiceManager;
+    }
+
+    // IServiceManager.Stub.asInterface(remote);
+    public static abstract class Stub extends android.os.Binder implements android.os.IServiceManager{
+        public static android.os.IServiceManager asInterface(android.os.IBinder obj){
+        if ((obj==null)) {
+            return null;
+        }
+        android.os.IInterface iin = obj.queryLocalInterface(DESCRIPTOR);
+        if (((iin!=null)&&(iin instanceof android.os.IServiceManager))) {
+            return ((android.os.IServiceManager)iin);
+        }
+        return new android.os.IServiceManager.Stub.Proxy(obj);
+        }
+  }
+```
+
+远端`IBinder`对象到aidl定义的接口类型，真正向下传递数据的是`IBinder`对象的transact方法，包裹的这一层主要是数据和Parcel之间的转换。和cpp通过宏定义asInterface方法是一样的。都是aidl自动生成的。
+
+```cpp
+// cpp中通过宏定义IBinder对象到aidl接口的方法asInterface
+#define DO_NOT_DIRECTLY_USE_ME_IMPLEMENT_META_INTERFACE0(ITYPE, INAME, BPTYPE)                     \
+    ::android::sp<ITYPE> ITYPE::asInterface(const ::android::sp<::android::IBinder>& obj) {        \
+        ::android::sp<ITYPE> intr;                                                                 \
+        if (obj != nullptr) {                                                                      \
+            intr = ::android::sp<ITYPE>::cast(obj->queryLocalInterface(ITYPE::descriptor));        \
+            if (intr == nullptr) {                                                                 \
+                intr = ::android::sp<BPTYPE>::make(obj);                                           \
+            }                                                                                      \
+        }                                                                                          \
+        return intr;                                                                               \
+    }  
+```
+
+`BinderInternal.getContextObject()`获取ServiceManager的`IBinder`对象。
+
+```cpp
+    // frameworks/base/core/jni/android_util_Binder.cpp
+    static jobject android_os_BinderInternal_getContextObject(JNIEnv* env, jobject clazz){
+        sp<IBinder> b = ProcessState::self()->getContextObject(NULL); // BpBinder(0)
+        return javaObjectForIBinder(env, b); // cpp对象到java对象
+    }
+
+    // cpp IBinder对象(JavaBBinder或者BpBinder) 到java对象
+    jobject javaObjectForIBinder(JNIEnv* env, const sp<IBinder>& val){
+        // val 是 JavaBBinder 或者 BpBinder
+        // 1.获取ServiceManager时候。BpBinder(0) ProcessState::self()->getContextObject(NULL);
+        // 2.从Parcel读的时候。同一进程JavaBBinder，不同进程BpBinder  android_os_Parcel_readStrongBinder
+        if (val == NULL) return NULL;
+
+        if (val->checkSubclass(&gBinderOffsets)) { // BpBinder没有实现，默认返回false，JavaBBinder gBinderOffsets结构体指针返回true
+            // It's a JavaBBinder created by ibinderForJavaObject. Already has Java object.
+            jobject object = static_cast<JavaBBinder*>(val.get())->object();
+            LOGDEATH("objectForBinder %p: it's our own %p!\n", val.get(), object);
+            return object;
+        }
+
+        BinderProxyNativeData* nativeData = new BinderProxyNativeData();
+        nativeData->mOrgue = new DeathRecipientList;
+        nativeData->mObject = val; // BpBinder.cpp 指针
+
+        // IBinder(cpp对象) --> java 对象  ===> java 对象保存native的指针，对外提供native类似方法 转头调用native层方法
+        // private static BinderProxy getInstance(long nativeData, long iBinder)
+        jobject object = env->CallStaticObjectMethod(gBinderProxyOffsets.mClass,
+                gBinderProxyOffsets.mGetInstance, (jlong) nativeData, (jlong) val.get());
+        if (env->ExceptionCheck()) {
+            // In the exception case, getInstance still took ownership of nativeData.
+            return NULL;
+        }
+        
+        // object(BinderProxy)对象并没有每次新建，有可能来自缓存。
+        BinderProxyNativeData* actualNativeData = getBPNativeData(env, object); // gBinderProxyOffsets.mNativeData
+        if (actualNativeData != nativeData) {
+            delete nativeData;
+        }
+        return object;
+}
+```
+
+`ProcessState::self()->getContextObject(NULL);`和cpp层获取ServiceManager一样，就是创建handle为0的BpBinder对象。接下来调用`BinderProxy`类的`private static BinderProxy getInstance(long nativeData, long iBinder)`创建java对象，并且把native的一些指针传递到了java对象。
+
+总结来说2部分，
+
+1. `IBinder`对象，java中是BinderProxy，cpp中是BpBinder，一个指向指定进程下的指定Service。并没有提供任何具体的某个方法，但是提供了transact方法，可以将数据传递到这个Service。
+2. java中是XXX.Stub.Proxy(IBinder)，cpp中是BpXXX(IBinder)都由aidl生成。将数据打包到Parcel，并调用transact方法向目标Service传递数据。对外表现出是一个普通方法的样子。
+
+> java中引用远端引用的BinderProxy对象，其实就是对cpp层BpBinder对象的一个包裹，内部真正向下传递数据的依旧是`BpBinder::transact`。
+> 分层的思想，`IBinder`接口定义Binder传输相关方法，`IInterface`定义对外提供的方法。`BinderProxy`实现`IBinder`部分，XXX.Stub.Proxy实现`IInterface`部分，再把两者组合起来。比如，`IActivityManager.Stub.asInterface(iBinder);`返回的是`IActivityManager.Stub.Proxy`对象，对外提供接口定义的方法。参数iBinder是数据传输部分。
+
+### 添加java实现的Serive到ServiceManager
+
+```java
+    public static void addService(String name, IBinder service, boolean allowIsolated,
+            int dumpPriority) {
+        try {
+            getIServiceManager().addService(name, service, allowIsolated, dumpPriority);
+        } catch (RemoteException e) {
+            Log.e(TAG, "error in addService", e);
+        }
+    }
+
+    // IServiceManager.Stud.Proxy
+    @Override public void addService(java.lang.String name, android.os.IBinder service, boolean allowIsolated, int dumpPriority) throws android.os.RemoteException{
+        android.os.Parcel _data = android.os.Parcel.obtain(asBinder()); // 获取对象，并且markForBinder(binder);
+        android.os.Parcel _reply = android.os.Parcel.obtain();
+        try {
+          _data.writeInterfaceToken(DESCRIPTOR);
+          _data.writeString(name);
+          _data.writeStrongBinder(service);
+          _data.writeBoolean(allowIsolated);
+          _data.writeInt(dumpPriority);
+          boolean _status = mRemote.transact(Stub.TRANSACTION_addService, _data, _reply, 0);
+          _reply.readException();
+        }
+        finally {
+          _reply.recycle(); //Parcel相关资源回收。也是Parcel对象的循环利用，和android.os.Message一样，单向链表
+          _data.recycle();
+        }
+    }    
+```
+
+调用时到aidl生成的`IServiceManager.Stud.Proxy`类中对应的方法，数据写入Parcel，由mRemote(BinderProxy)继续向下发送。对于java层实现的Service，他是继承IXXX.Stub的(比如`ActivityManagerService extends IActivityManager.Stub`)，间接继承Binder。在把java Binder对象写入Parcel时(`_data.writeStrongBinder(service);`)，会先将java对象转成cpp对象在写入。cpp层中的JavaBBinderHolder对象，在Binder构造函数时创建的，真正写入Parcel的类型是JavaBBinder。也就是说IPCThreadState执行远程请求，经过`BBinder::transact`分发后，cpp实现的Service到了`BnXXX::onTransact`，java实现的Service到了`JavaBBinder::onTransact`进而到Binder.java的execTransact方法。
+
+```java
+    // frameworks/base/core/jni/android_util_Binder.cpp
+    // java对象 -> cpp对象
+    sp<IBinder> ibinderForJavaObject(JNIEnv* env, jobject obj){
+        // Parcel write 时候调用
+        if (obj == NULL) return NULL;
+
+        // Instance of Binder?
+        if (env->IsInstanceOf(obj, gBinderOffsets.mClass)) { // android/os/Binder
+        // 这个Holder除了wp<JavaBBinder> mBinder，还有扩展Binder sp<IBinder> mExtension;
+            JavaBBinderHolder* jbh = (JavaBBinderHolder*)    
+                env->GetLongField(obj, gBinderOffsets.mObject); // mObject字段, JavaBBinderHolder
+
+            if (jbh == nullptr) {
+                ALOGE("JavaBBinderHolder null on binder");
+                return nullptr;
+            }
+
+            // 返回 JavaBBinder
+            return jbh->get(env, obj); // 第一次的时候 new JavaBBinder(env, obj); JavaBBinderHolder 中保存wp<JavaBBinder> 弱引用 ==> 避免循环引用
+        }
+
+        // Instance of BinderProxy?
+        if (env->IsInstanceOf(obj, gBinderProxyOffsets.mClass)) { // BinderProxy
+            return getBPNativeData(env, obj)->mObject;
+        }
+
+        ALOGW("ibinderForJavaObject: %p is not a Binder object", obj);
+        return NULL;
+    }
+
+```
+
+> - cpp对象和java对象的相互转换，java对象中保存来自cpp对象的指针，对外提供cpp类中的相关方法，调用时也是通过指针变量执行cpp中的方法。比如：cpp对象到java对象时，在jni cpp代码中调用java的对象创建方法，并且把cpp对象的有关指针保存到java对象。java对象到cpp对象时，把指针变量取出来强转成对应的类型
+> - 不管是cpp实现还是java实现的Service都有一个，扩展Binder的属性。`public final native void setExtension(@Nullable IBinder extension);`, `void BBinder::setExtension(const sp<IBinder>& extension)`。client端可以通过对应的get方法获取到对应的Binder对象，提供了一个固定的传输Server端Binder对象到Client端的方法。当然自己新增方法也行。
+
+在BinderProxy.transact方法中，增加了从java层发起传输，到收到结果的监听sTransactListener。最终到jni也是通过BpBinder::transact向下继续传输数据。
+
+cpp实现的Binder Service接口，在执行远程请求时通过`BBinder::transact`方法，直接就到了`BnXXX::onTransact`。而java实现的Service接口，要穿过jni(`JavaBBinder`)再到`XXX.Stub.onTransact`。java调用远程方法时，也要穿过jni层，调用到对应方法的cpp实现。总的来说，java，cpp使用Binder的方式是一样一样的，不同的是java需要穿过jni有java对象和cpp对象直接的转换。
+
+cpp层 java层Binder继承关系图
+
+## 版本信息
 
 内核版本：
-https://android.googlesource.com/kernel/common 
+<https://android.googlesource.com/kernel/common>
 android14-6.1-2024-10_r25
 
-aops版本：https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest
+aops版本：<https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest>
 android-14.0.0_r30
-
-> aosp 代码镜像地址 `repo init -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest -b  android-14.0.0_r30`
 
 Build number：aosp_cf_x86_64_phone-userdebug 14 AP1A.240405.002 eng.tys.20251016.021920 test-keys
 
-#### binder java接口
+> - aosp 代码镜像地址 `repo init -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest -b  android-14.0.0_r30`
+> - 编译x86_64虚拟设备内核：`tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist`
+> - 启动模拟器时指定内核路径：`launch_cvd -kernel_path=/android_disk/android-kernel/out/virtual_device_x86_64/dist/bzImage -initramfs_path=/android_disk/android-kernel/out/virtual_device_x86_64/dist/initramfs.img`
