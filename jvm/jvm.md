@@ -6,7 +6,7 @@
 
 <font style="background: blue">方法区</font>
 
-> 类信息(版本、字段、方法、接口)，静态变量，常量
+> 类信息(版本、字段、方法、接口)类加载时生成，静态变量，常量
 >  
 
 <font style="background: blue">堆</font>
@@ -332,7 +332,7 @@ c = new Child();
 //        Parent 静态代码块  
 //        Child 静态代码块		
 //        Parent 非静态代码块
-//        Parent 构造函数
+//        Parent 构造函数	
 //        Child 非静态代码块
 //        Child 构造函数
 //        ========================
@@ -390,7 +390,7 @@ class ReorderExample {
 
 ##### happens-before
 
-是内存模型中的一种规则，描述两个操作的内存可见性。如果操作A happens-before 操作B， 则A操作的结果对于B操作是可见的。也就是说操作B可以看到操作A的结果。
+是内存模型中的一种规则，描述两个操作的内存可见性。如果操作A happens-before 操作B， 则A操作的结果对于B操作是可见的。也就是说操作B可以看到操作A的结果。前面操作对后面是可见的
 
 jvm定义了几种规则自动符合happens-before规则
 
@@ -406,7 +406,7 @@ jvm定义了几种规则自动符合happens-before规则
    > int a = 10;  // 1
    > b = b + a;   // 2
 
-2. 锁规则
+2. 锁规则（lock synchronized）
 
    同一个对象的锁，解锁操作happens-before加锁操作。也就是说一个线程释放了锁，另一线程获取了该锁，那么在第一个线程释放锁之前做的所有操作对于第二个线程获取锁后都是可见的。
 
@@ -423,13 +423,14 @@ jvm定义了几种规则自动符合happens-before规则
    ```kotlin
    i = 9
    val t = thread {
-       println("==== $i")
+       println("==== $i") //线程B中可以看到 启动线程对变量的修改
    }
    t.join()
+   // 线程B已经结束，线程A可以看到线程B中对变量的修改
    ```
-
+   
    主线程在启动子线程之前修改共享变量i，根据线程启动规则 子线程对共享变量可见(修改后的值)
-
+   
 6. 线程终止规则
    线程中所有操作都 happens-before 该线程终止。也就是说线程A等待(join方法)线程B终止，线程B中所有操作在线程A等待结束后都可见。
 
@@ -449,7 +450,7 @@ jvm定义了几种规则自动符合happens-before规则
   锁对象是当前实例，只有同一个对象调用锁方法才会出现互斥。不同对象调用锁方法不会有互斥效果
 
 - 修饰静态方法
-  锁对象是该类的Class对象，调用不同实例的锁方法也会出现互斥现象
+  锁对象是该类的Class对象，调用不同实例的锁方法也会出现互斥现象(类资源 静态方法 静态变量)
 
 - 修饰代码块
   锁对象是括号中指定的对象
@@ -610,7 +611,7 @@ RUNNING：接受新任务并且处理队列中任务
 
 SHUTDOWN：不接受新任务，但是处理队列中任务。  调用shutdown()后，RUNNING -> SHUTDOWN
 
-STOP：不接受新任务，不处理队列中任务，中断正在处理的任务。调用shutdownNow()后，(RUNNING or SHUTDOWN) -> STOP
+STOP：不接受新任务，不处理队列中任务，中断正在处理的任务(不能响应中断的话停不下来)。调用shutdownNow()后，(RUNNING or SHUTDOWN) -> STOP
 
 TIDYING：所有任务已终止，workerCount 为零，线程转换到状态 TIDYING，运行terminated()钩子方法
 
@@ -621,6 +622,8 @@ TERMINATED：terminated()方法运行结束
 调用 execute 或者 submit提交任务到线程池时
 
 1. 线程池中运行的线程数量还没有达到 corePoolSize 大小时，线程池会创建一个新线程执行提交的任务，无论之前创建的线程是否处于空闲状态。
+
+   
 
 2. 线程池中运行的线程数量已经达到 corePoolSize 大小时，线程池会把任务加入到等待队列中，直到某一个线程空闲了，线程池会根据我们设置的等待队列规则(是否运行核心线程超时，超时时间)，从队列中取出一个新的任务执行。
 
@@ -660,6 +663,8 @@ TERMINATED：terminated()方法运行结束
 3. 线程数大于 corePoolSize 数量但是还没有达到最大线程数 maximumPoolSize，并且等待队列已满，则线程池会创建新的线程来执行任务。
 
 4. 如果提交的任务，无法被核心线程直接执行，又无法加入等待队列，又无法创建“非核心线程”直接执行，线程池将根据拒绝处理器定义的策略处理这个任务。
+
+   
 
 *线程在控制中断时用了AQS*
 
@@ -707,7 +712,7 @@ TERMINATED：终止状态，线程执行完成或者由于异常退出
 > }
 > 
 > public void set(T value) {
->         Thread t = Thread.currentThread();
+>         Thread t = Thread.currentThread(); // 和当前线程绑定
 >         ThreadLocalMap map = getMap(t);
 >         if (map != null) {
 >             map.set(this, value); // this是ThreadLocal<T>

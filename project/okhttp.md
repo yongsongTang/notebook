@@ -8,17 +8,17 @@
 internal fun getResponseWithInterceptorChain(): Response {
   // Build a full stack of interceptors.
   val interceptors = mutableListOf<Interceptor>()
-  interceptors += client.interceptors
+  interceptors += client.interceptors  // 外部添加拦截器 在前面 
   interceptors += RetryAndFollowUpInterceptor(client)
   interceptors += BridgeInterceptor(client.cookieJar)
-  interceptors += CacheInterceptor(client.cache)
-  interceptors += ConnectInterceptor
+  interceptors += CacheInterceptor(client.cache) // 缓存(强制使用、不使用缓存 时间)
+  interceptors += ConnectInterceptor // 到目标地址的链接(打开 链接复用)
   if (!forWebSocket) {
     interceptors += client.networkInterceptors
   }
-  interceptors += CallServerInterceptor(forWebSocket)
+  interceptors += CallServerInterceptor(forWebSocket) // 真正发起http请求的
   ...
-  val chain = RealInterceptorChain(index = 0, request = originalRequest)
+  val chain = RealInterceptorChain(index = 0, request = originalRequest) // 递归执行拦截器
   val response = chain.proceed(originalRequest)
   return response
 }
@@ -83,9 +83,9 @@ interface Interceptor_ {
 }
 
 class RealInterceptorChain(
-    private val interceptors: List<Interceptor_>,
-    private val index: Int,
-    private val request: Request_
+    private val interceptors: List<Interceptor_>, // 所有的拦截器集合
+    private val index: Int,		 // 当前执行拦截器数组下标
+    private val request: Request_  // 当前执行拦截器的参数，递归参数传递
 ) : Interceptor_.Chain {
 
     override fun request(): Request_ = this.request
@@ -202,7 +202,7 @@ internal fun isEligible(address: Address, routes: List<Route>?): Boolean {
   //该链接使用数 >= 允许最大分配数 || 不允许在进行数据交换
   //allocationLimit：
   // http_1_1协议时值为1，一个连接同时只能发起一个http请求
-  // http/2xi协议时值为128，一个连接最多并发128个http请求
+  // http/2协议时值为128，一个连接最多并发128个http请求
   //noNewExchanges:true表示该链接不允许在进行数据交互,在读、写出错时会设置成true  
   if (calls.size >= allocationLimit || noNewExchanges) return false
 
@@ -244,7 +244,7 @@ internal fun isEligible(address: Address, routes: List<Route>?): Boolean {
 
 ### 链接清理
 
-每一次请求结束后，不管正常还是异常结束都会将Call从该链接的弱引用集合中移除,在移除后发现集合为空，说明还连接已经为空此时会触发清理连接的任务cleanupTask。在创建新链接添加到链接池时，也会触发清理连接任务。
+每一次请求结束后(这一次这个链接拦截器处理结束)，不管正常还是异常结束都会将Call从该链接的弱引用集合中移除,在移除后发现集合为空，说明还连接已经为空此时会触发清理连接的任务cleanupTask。在创建新链接添加到链接池时，也会触发清理连接任务。
 
 ```kotlin
 //ReallCall.kt
@@ -253,13 +253,14 @@ internal fun getResponseWithInterceptorChain(): Response {
 	...
   var calledNoMoreExchanges = false
   try {
-    val response = chain.proceed(originalRequest)
+    val response = chain.proceed(originalRequest) // 拦截器链开始
  	...
     return response
   } catch (e: IOException) {
     calledNoMoreExchanges = true
     throw noMoreExchanges(e) as Throwable //从弱引用队列中移除Call(请求和响应body已经关闭情况下)
   } finally {
+    // 连接器链 处理结束
     if (!calledNoMoreExchanges) {
       noMoreExchanges(null) //从弱引用队列中移除Call(请求和响应body已经关闭情况下)
     }

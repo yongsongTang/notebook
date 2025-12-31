@@ -8,6 +8,12 @@ android虚拟机：指令集基于寄存器
 
 
 
+JIT  	just in time 
+
+AOT	ahead of time 
+
+
+
 
 
 
@@ -402,7 +408,7 @@ void recycleUnchecked() {
 
 ActivityA --> ActivityManagerService(检查调用权限，解析Intent，Activity栈)
 
-ActivityManagerService --> ApplicationThread
+ActivityManagerService --> ApplicationThread (binder)
 
 ActivityThread.handleLaunchActivity()
 
@@ -692,8 +698,6 @@ public boolean dispatchTouchEvent(MotionEvent ev) {
 ```
 
 
-
-​		
 
 ##### ANR(application not response)
 
